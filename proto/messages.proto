@@ -33,6 +33,8 @@ message RustImportsResponse {
     repeated string extern_mods = 4;
     bool success = 5;
     string error_msg = 6;
+    /** Relative paths from include_str!() and include_bytes!() macros. */
+    repeated string include_strs = 7;
 }
 
 message LockfileCratesRequest {

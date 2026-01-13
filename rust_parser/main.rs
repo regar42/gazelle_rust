@@ -39,6 +39,7 @@ fn handle_rust_imports_request(
             response.imports = rust_imports.imports;
             response.test_imports = rust_imports.test_imports;
             response.extern_mods = rust_imports.extern_mods;
+            response.include_strs = rust_imports.include_strs;
         }
         Err(err) => {
             // Don't crash gazelle if we encounter an error, instead bubble it up so that we can

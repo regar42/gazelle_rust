@@ -15,6 +15,8 @@ pub struct RustImports {
     pub imports: Vec<String>,
     pub test_imports: Vec<String>,
     pub extern_mods: Vec<String>,
+    /// Relative file paths from include_str!() and include_bytes!() macros.
+    pub include_strs: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -70,6 +72,7 @@ pub fn parse_imports_from_str(
         imports: filter_imports(root_scope.imports),
         test_imports: filter_imports(root_scope.test_imports),
         extern_mods: visitor.extern_mods,
+        include_strs: visitor.include_strs,
     })
 }
 
@@ -172,6 +175,8 @@ struct AstVisitor<'ast> {
     mod_denylist: HashSet<Ident<'ast>>,
     /// Enabled features
     enabled_features: HashSet<String>,
+    /// Relative file paths from include_str!() and include_bytes!() macros
+    include_strs: Vec<String>,
 }
 
 impl AstVisitor<'_> {
@@ -186,6 +191,7 @@ impl AstVisitor<'_> {
             extern_mods: Vec::default(),
             mod_denylist: HashSet::new(),
             enabled_features: enabled_features.iter().cloned().collect(),
+            include_strs: Vec::default(),
         }
     }
 }
@@ -424,6 +430,19 @@ impl<'ast> AstVisitor<'ast> {
 }
 
 impl<'ast> Visit<'ast> for AstVisitor<'ast> {
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        // Detect include_str!() and include_bytes!() macros
+        if let Some(ident) = node.path.get_ident() {
+            if ident == "include_str" || ident == "include_bytes" {
+                // Try to parse the macro argument as a string literal
+                if let Ok(lit) = syn::parse2::<syn::LitStr>(node.tokens.clone()) {
+                    self.include_strs.push(lit.value());
+                }
+            }
+        }
+        visit::visit_macro(self, node);
+    }
+
     fn visit_use_name(&mut self, node: &'ast syn::UseName) {
         self.add_mod(&node.ident);
     }

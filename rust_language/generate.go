@@ -176,6 +176,7 @@ func (l *rustLang) generateRulesPureBazel(args language.GenerateArgs) language.G
 				rule.SetKind(unmappedKind)
 
 				responses := []*pb.RustImportsResponse{}
+				includeStrs := []string{}
 
 				enabled_features := []string{}
 				for _, feature := range rule.AttrStrings("crate_features") {
@@ -189,8 +190,16 @@ func (l *rustLang) generateRulesPureBazel(args language.GenerateArgs) language.G
 						response := l.parseFile(args.Config, file, enabled_features, &args)
 						if response != nil {
 							responses = append(responses, response)
+							// Resolve include_str!/include_bytes! paths relative to the source file
+							includeStrs = append(includeStrs, ResolveIncludePaths(file, response.IncludeStrs)...)
 						}
 					}
+				}
+
+				// Set compile_data if there are include_strs
+				includeStrs = DedupeAndSortStrings(includeStrs)
+				if len(includeStrs) > 0 {
+					rule.SetAttr("compile_data", includeStrs)
 				}
 
 				addRule(rule, responses)
@@ -215,6 +224,12 @@ func (l *rustLang) generateRulesPureBazel(args language.GenerateArgs) language.G
 
 			rule := rule.NewRule(inferredKind, *ruleName)
 			rule.SetAttr("srcs", []string{file})
+
+			// Set compile_data if there are include_strs
+			includeStrs := DedupeAndSortStrings(ResolveIncludePaths(file, response.IncludeStrs))
+			if len(includeStrs) > 0 {
+				rule.SetAttr("compile_data", includeStrs)
+			}
 
 			responses := []*pb.RustImportsResponse{response}
 
@@ -244,6 +259,11 @@ func (l *rustLang) generateRulesPureBazel(args language.GenerateArgs) language.G
 
 				testRule = rule.NewRule("rust_test", *testRuleName)
 				testRule.SetAttr("crate", ":"+ruleData.rule.Name())
+
+				// Copy compile_data from the parent crate (which already has include_strs resolved)
+				if parentCompileData := ruleData.rule.AttrStrings("compile_data"); len(parentCompileData) > 0 {
+					testRule.SetAttr("compile_data", parentCompileData)
+				}
 			} else {
 				testRule = CloneRule(existingTestRule)
 			}
@@ -379,7 +399,14 @@ func (l *rustLang) generateRulesFromCargo(args language.GenerateArgs) language.G
 
 				testRule := rule.NewRule("rust_test", *testRuleName)
 				testRule.SetAttr("crate", ":"+ruleData.rule.Name())
-				testRule.SetAttr("compile_data", []string{"Cargo.toml"})
+
+				// Copy compile_data from the parent crate (which already has include_strs resolved)
+				if parentCompileData := ruleData.rule.AttrStrings("compile_data"); len(parentCompileData) > 0 {
+					testRule.SetAttr("compile_data", parentCompileData)
+				} else {
+					testRule.SetAttr("compile_data", []string{"Cargo.toml"})
+				}
+
 				if len(enabledFeatures) > 0 {
 					testRule.SetAttr("crate_features", enabledFeatures)
 				}
@@ -432,11 +459,14 @@ func (l *rustLang) generateCargoRule(c *config.Config, args *language.GenerateAr
 
 	srcs := []string{}
 	responses := []*pb.RustImportsResponse{}
+	includeStrs := []string{}
 
 	for src, response := range importsResponses {
 		srcs = append(srcs, src)
 		if response != nil {
 			responses = append(responses, response)
+			// Resolve include_str!/include_bytes! paths relative to the source file
+			includeStrs = append(includeStrs, ResolveIncludePaths(src, response.IncludeStrs)...)
 		}
 	}
 
@@ -446,7 +476,11 @@ func (l *rustLang) generateCargoRule(c *config.Config, args *language.GenerateAr
 		newRule.SetAttr("srcs", srcs)
 	}
 	newRule.SetAttr("visibility", []string{"//visibility:public"})
-	newRule.SetAttr("compile_data", []string{"Cargo.toml"})
+
+	// Build compile_data with Cargo.toml and include_str!/include_bytes! paths
+	compileData := []string{"Cargo.toml"}
+	compileData = append(compileData, DedupeAndSortStrings(includeStrs)...)
+	newRule.SetAttr("compile_data", compileData)
 
 	if targetName != crateName {
 		newRule.SetAttr("crate_name", crateName)
@@ -495,18 +529,25 @@ func (l *rustLang) generateBuildScript(c *config.Config, args *language.Generate
 
 	srcs := []string{}
 	responses := []*pb.RustImportsResponse{}
+	includeStrs := []string{}
 
 	for src, response := range importsResponses {
 		srcs = append(srcs, src)
 		if response != nil {
 			responses = append(responses, response)
+			// Resolve include_str!/include_bytes! paths relative to the source file
+			includeStrs = append(includeStrs, ResolveIncludePaths(src, response.IncludeStrs)...)
 		}
 	}
 
 	newRule := rule.NewRule("cargo_build_script", "build_script")
 	newRule.SetAttr("srcs", srcs)
 	newRule.SetAttr("visibility", []string{"//visibility:public"})
-	newRule.SetAttr("compile_data", []string{"Cargo.toml"})
+
+	// Build compile_data with Cargo.toml and include_str!/include_bytes! paths
+	compileData := []string{"Cargo.toml"}
+	compileData = append(compileData, DedupeAndSortStrings(includeStrs)...)
+	newRule.SetAttr("compile_data", compileData)
 	newRule.SetAttr("crate_root", "build.rs")
 
 	cfg := l.GetConfig(args.Config)
