@@ -154,6 +154,8 @@ dependencies = [
  "cargo_toml",
  "clap",
  "lazy_static",
+ "proc-macro2",
+ "quote",
  "syn",
 ]
 

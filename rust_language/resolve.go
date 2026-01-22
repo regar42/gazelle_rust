@@ -1,6 +1,7 @@
 package rust_language
 
 import (
+	"log"
 	"sort"
 	"strings"
 
@@ -78,6 +79,20 @@ func (l *rustLang) Resolve(c *config.Config, ix *resolve.RuleIndex,
 		ruleData := ruleData.(RuleData)
 		deps := map[label.Label]bool{}
 		procMacroDeps := map[label.Label]bool{}
+		// aliases map: label -> local_name (for renamed dependencies)
+		aliases := map[label.Label]string{}
+
+		// Build reverse lookup: local_name -> package_name
+		localToPackage := make(map[string]string)
+		for packageName, localName := range ruleData.aliases {
+			localToPackage[localName] = packageName
+		}
+
+		// DEBUG: Log alias info
+		if len(ruleData.aliases) > 0 {
+			l.Log(c, logWarn, from, "DEBUG: ruleData.aliases = %v", ruleData.aliases)
+			l.Log(c, logWarn, from, "DEBUG: localToPackage = %v", localToPackage)
+		}
 
 		var crateName string
 		if ruleData.testedCrate != nil {
@@ -111,31 +126,43 @@ func (l *rustLang) Resolve(c *config.Config, ix *resolve.RuleIndex,
 					continue
 				}
 
+				// Check if this import is an alias (local_name -> package_name)
+				actualCrate := imp
+				isAlias := false
+				if packageName, ok := localToPackage[imp]; ok {
+					actualCrate = packageName
+					isAlias = true
+				}
+
 				is_proc_macro := false
 
-				label, found := l.resolveCrate(cfg, c, ix, l.Name(), imp, ruleData.parentCrateName, from)
-				if label != nil {
+				resolvedLabel, found := l.resolveCrate(cfg, c, ix, l.Name(), actualCrate, ruleData.parentCrateName, from)
+				if resolvedLabel != nil {
 					is_proc_macro = false
 				}
 				if !found {
-					label, found = l.resolveCrate(cfg, c, ix, procMacroLangName, imp, ruleData.parentCrateName, from)
-					if label != nil {
+					resolvedLabel, found = l.resolveCrate(cfg, c, ix, procMacroLangName, actualCrate, ruleData.parentCrateName, from)
+					if resolvedLabel != nil {
 						is_proc_macro = true
 					}
 				}
 
-				if proc_macro, ok := cfg.ProcMacroOverrides[imp]; ok {
+				if proc_macro, ok := cfg.ProcMacroOverrides[actualCrate]; ok {
 					// user-defined override
 					// NOTE: well-known overrides are handled in lockfile_crates.go
 					is_proc_macro = proc_macro
 				}
 
 				if found {
-					if label != nil {
+					if resolvedLabel != nil {
 						if is_proc_macro {
-							procMacroDeps[*label] = true
+							procMacroDeps[*resolvedLabel] = true
 						} else {
-							deps[*label] = true
+							deps[*resolvedLabel] = true
+						}
+						// If this was an aliased import, record the alias mapping
+						if isAlias {
+							aliases[*resolvedLabel] = imp
 						}
 					}
 				} else {
@@ -150,6 +177,15 @@ func (l *rustLang) Resolve(c *config.Config, ix *resolve.RuleIndex,
 
 		maybeSetAttrStrings(r, "deps", finalizeDeps(deps, from))
 		maybeSetAttrStrings(r, "proc_macro_deps", finalizeDeps(procMacroDeps, from))
+
+		// DEBUG: Log final aliases
+		if len(aliases) > 0 {
+			l.Log(c, logWarn, from, "DEBUG: final aliases = %v", aliases)
+		} else if len(ruleData.aliases) > 0 {
+			l.Log(c, logWarn, from, "DEBUG: ruleData.aliases was non-empty but final aliases is empty")
+		}
+
+		maybeSetAliases(r, aliases, from)
 	}
 }
 
@@ -159,6 +195,37 @@ func maybeSetAttrStrings(r *rule.Rule, attr string, val []string) {
 	} else {
 		r.DelAttr(attr)
 	}
+}
+
+// maybeSetAliases sets the aliases attribute on a rule if there are any aliases.
+// The aliases attribute maps dependency labels to their local names (aliases).
+func maybeSetAliases(r *rule.Rule, aliases map[label.Label]string, from label.Label) {
+	if len(aliases) == 0 {
+		r.DelAttr("aliases")
+		return
+	}
+
+	// Convert to map[string]string with relative labels
+	aliasMap := make(map[string]string)
+	for lbl, localName := range aliases {
+		relLabel := lbl.Rel(from.Repo, from.Pkg).String()
+		aliasMap[relLabel] = localName
+	}
+
+	// DEBUG: print aliasMap
+	log.Printf("DEBUG maybeSetAliases: setting aliases = %v (type %T) on rule %s", aliasMap, aliasMap, r.Name())
+
+	r.SetAttr("aliases", aliasMap)
+
+	// DEBUG: verify the attribute was set
+	if attr := r.Attr("aliases"); attr != nil {
+		log.Printf("DEBUG maybeSetAliases: verified aliases attr is set, type=%T", attr)
+	} else {
+		log.Printf("DEBUG maybeSetAliases: WARNING aliases attr is nil after SetAttr!")
+	}
+
+	// DEBUG: list all attributes on the rule
+	log.Printf("DEBUG maybeSetAliases: rule attrs = %v", r.AttrKeys())
 }
 
 func (l *rustLang) resolveCrateVersion(cfg *rustConfig, c *config.Config,
