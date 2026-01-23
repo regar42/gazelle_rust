@@ -123,8 +123,8 @@ func (*rustLang) Kinds() map[string]rule.KindInfo {
 	for _, commonDef := range commonDefs {
 		kinds[commonDef] = rule.KindInfo{
 			NonEmptyAttrs:  map[string]bool{"srcs": true},
-			MergeableAttrs: map[string]bool{"srcs": true, "deps": true, "proc_macro_deps": true, "aliases": true},
-			ResolveAttrs:   map[string]bool{"deps": true, "proc_macro_deps": true, "aliases": true},
+			MergeableAttrs: map[string]bool{"srcs": true, "deps": true, "proc_macro_deps": true},
+			ResolveAttrs:   map[string]bool{"deps": true, "proc_macro_deps": true},
 		}
 	}
 
@@ -145,8 +145,8 @@ func (*rustLang) Kinds() map[string]rule.KindInfo {
 	for _, cargoDef := range cargoDefs {
 		kinds[cargoDef] = rule.KindInfo{
 			NonEmptyAttrs:  map[string]bool{"srcs": true},
-			MergeableAttrs: map[string]bool{"srcs": true, "deps": true, "proc_macro_deps": true, "aliases": true},
-			ResolveAttrs:   map[string]bool{"deps": true, "proc_macro_deps": true, "aliases": true},
+			MergeableAttrs: map[string]bool{"srcs": true, "deps": true, "proc_macro_deps": true},
+			ResolveAttrs:   map[string]bool{"deps": true, "proc_macro_deps": true},
 		}
 	}
 

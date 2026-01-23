@@ -1,7 +1,6 @@
 package rust_language
 
 import (
-	"log"
 	"sort"
 	"strings"
 
@@ -88,12 +87,6 @@ func (l *rustLang) Resolve(c *config.Config, ix *resolve.RuleIndex,
 			localToPackage[localName] = packageName
 		}
 
-		// DEBUG: Log alias info
-		if len(ruleData.aliases) > 0 {
-			l.Log(c, logWarn, from, "DEBUG: ruleData.aliases = %v", ruleData.aliases)
-			l.Log(c, logWarn, from, "DEBUG: localToPackage = %v", localToPackage)
-		}
-
 		var crateName string
 		if ruleData.testedCrate != nil {
 			// test crates have to depend on the tested crate to be able to import them directly
@@ -177,14 +170,6 @@ func (l *rustLang) Resolve(c *config.Config, ix *resolve.RuleIndex,
 
 		maybeSetAttrStrings(r, "deps", finalizeDeps(deps, from))
 		maybeSetAttrStrings(r, "proc_macro_deps", finalizeDeps(procMacroDeps, from))
-
-		// DEBUG: Log final aliases
-		if len(aliases) > 0 {
-			l.Log(c, logWarn, from, "DEBUG: final aliases = %v", aliases)
-		} else if len(ruleData.aliases) > 0 {
-			l.Log(c, logWarn, from, "DEBUG: ruleData.aliases was non-empty but final aliases is empty")
-		}
-
 		maybeSetAliases(r, aliases, from)
 	}
 }
@@ -212,20 +197,7 @@ func maybeSetAliases(r *rule.Rule, aliases map[label.Label]string, from label.La
 		aliasMap[relLabel] = localName
 	}
 
-	// DEBUG: print aliasMap
-	log.Printf("DEBUG maybeSetAliases: setting aliases = %v (type %T) on rule %s", aliasMap, aliasMap, r.Name())
-
 	r.SetAttr("aliases", aliasMap)
-
-	// DEBUG: verify the attribute was set
-	if attr := r.Attr("aliases"); attr != nil {
-		log.Printf("DEBUG maybeSetAliases: verified aliases attr is set, type=%T", attr)
-	} else {
-		log.Printf("DEBUG maybeSetAliases: WARNING aliases attr is nil after SetAttr!")
-	}
-
-	// DEBUG: list all attributes on the rule
-	log.Printf("DEBUG maybeSetAliases: rule attrs = %v", r.AttrKeys())
 }
 
 func (l *rustLang) resolveCrateVersion(cfg *rustConfig, c *config.Config,
